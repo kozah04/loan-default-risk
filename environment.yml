@@ -1,0 +1,19 @@
+name: loan-default-risk
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - numpy
+  - pandas
+  - scikit-learn
+  - matplotlib
+  - seaborn
+  - jupyter
+  - ipykernel
+  - pip:
+      - xgboost
+      - imbalanced-learn
+      - shap
+      - pytest
