@@ -67,28 +67,43 @@ def evaluate_model(y_true: pd.Series, y_pred_proba: np.ndarray, threshold: float
 
 def find_optimal_threshold(y_true: pd.Series, y_pred_proba: np.ndarray) -> float:
     """
-    Find the threshold that maximises the F1 score for the minority class (Bad loans).
+    Find the threshold that maximises F1 for the Bad class (class 0).
 
-    In a credit risk context, missing a bad loan (false negative) is typically
-    more costly than incorrectly flagging a good loan (false positive). This
-    function finds the threshold that best captures bad loans without being
-    too aggressive.
+    predict_proba returns the probability of Good (class 1). A customer is
+    predicted Bad when their Good probability falls below the threshold.
+    Raising the threshold above 0.5 means we require more confidence before
+    calling someone Good, which catches more defaulters at the cost of some
+    false alarms on good payers.
+
+    We search thresholds from 0.3 to 0.9 and select the one that maximises
+    F1 specifically for the Bad class, which is the metric that matters most
+    in a credit risk context where missing a defaulter is more costly than
+    incorrectly flagging a good payer.
 
     Parameters
     ----------
     y_true : pd.Series
+        True binary labels where 1 = Good and 0 = Bad.
     y_pred_proba : np.ndarray
+        Predicted probabilities for the Good class (class 1).
 
     Returns
     -------
     float : optimal threshold
     """
-    precision, recall, thresholds = precision_recall_curve(y_true, y_pred_proba)
-    f1_scores = 2 * (precision * recall) / (precision + recall + 1e-8)
-    optimal_idx = np.argmax(f1_scores[:-1])
-    optimal_threshold = thresholds[optimal_idx]
-    print(f"Optimal threshold: {optimal_threshold:.4f} (F1: {f1_scores[optimal_idx]:.4f})")
-    return optimal_threshold
+    thresholds = np.arange(0.3, 0.9, 0.01)
+    best_threshold = 0.5
+    best_f1_bad = 0.0
+
+    for t in thresholds:
+        y_pred = (y_pred_proba >= t).astype(int)
+        f1_bad = f1_score(y_true, y_pred, pos_label=0, zero_division=0)
+        if f1_bad > best_f1_bad:
+            best_f1_bad = f1_bad
+            best_threshold = t
+
+    print(f"Optimal threshold: {best_threshold:.4f} (F1 Bad class: {best_f1_bad:.4f})")
+    return best_threshold
 
 
 def plot_confusion_matrix(y_true, y_pred, model_name: str, save: bool = True) -> None:
