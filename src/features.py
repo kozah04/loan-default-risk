@@ -33,25 +33,15 @@ def engineer_prevloans_features(prevloans: pd.DataFrame) -> pd.DataFrame:
     """
     df = prevloans.copy()
 
-    # Parse date columns
     date_cols = ["approveddate", "creationdate", "closeddate", "firstduedate", "firstrepaiddate"]
     for col in date_cols:
         df[col] = pd.to_datetime(df[col], errors="coerce")
 
-    # Days between first due date and actual first repayment
-    # Positive = paid late, negative = paid early, zero = paid on time
     df["days_late_first_payment"] = (df["firstrepaiddate"] - df["firstduedate"]).dt.days
-
-    # Whether the loan was paid late (binary flag per loan)
     df["paid_late"] = (df["days_late_first_payment"] > 0).astype(int)
-
-    # Loan duration actually taken (closed - approved)
     df["actual_loan_duration"] = (df["closeddate"] - df["approveddate"]).dt.days
-
-    # Interest ratio — how much extra the customer paid relative to principal
     df["interest_ratio"] = (df["totaldue"] - df["loanamount"]) / df["loanamount"]
 
-    # Aggregate per customer
     agg = df.groupby("customerid").agg(
         prev_loan_count=("systemloanid", "count"),
         prev_avg_loanamount=("loanamount", "mean"),
@@ -70,7 +60,11 @@ def engineer_prevloans_features(prevloans: pd.DataFrame) -> pd.DataFrame:
     return agg
 
 
-def engineer_model_features(df: pd.DataFrame, is_train: bool = True) -> tuple:
+def engineer_model_features(
+    df: pd.DataFrame,
+    is_train: bool = True,
+    train_columns: list = None
+) -> tuple:
     """
     Apply feature engineering to the merged DataFrame and return
     features (X) and optionally the target (y).
@@ -80,7 +74,13 @@ def engineer_model_features(df: pd.DataFrame, is_train: bool = True) -> tuple:
     df : pd.DataFrame
         Merged DataFrame from loader.py.
     is_train : bool
-        If True, also extracts and encodes the target variable.
+        If True, extracts and encodes the target variable.
+    train_columns : list, optional
+        List of feature columns from training. When provided during test
+        processing, the output is reindexed to match these columns exactly.
+        Columns missing from the test set are filled with 0, preventing
+        one-hot encoding mismatches caused by categories present in training
+        but absent in the test set.
 
     Returns
     -------
@@ -91,33 +91,26 @@ def engineer_model_features(df: pd.DataFrame, is_train: bool = True) -> tuple:
     """
     data = df.copy()
 
-    # Parse date columns
     data["approveddate"] = pd.to_datetime(data["approveddate"], errors="coerce")
     data["creationdate"] = pd.to_datetime(data["creationdate"], errors="coerce")
     data["birthdate"] = pd.to_datetime(data["birthdate"], errors="coerce")
 
-    # Age at time of loan application
     data["age_at_application"] = (
         (data["approveddate"] - data["birthdate"]).dt.days / 365.25
     ).round(1)
 
-    # Days between loan creation and approval
     data["days_to_approval"] = (data["approveddate"] - data["creationdate"]).dt.days
 
-    # Interest ratio on the current loan
     data["current_interest_ratio"] = (
         (data["totaldue"] - data["loanamount"]) / data["loanamount"]
     )
 
-    # Whether the customer was referred for this loan
     data["is_referred"] = data["referredby"].notna().astype(int)
 
-    # Encode target variable
     y = None
     if is_train:
         y = (data["good_bad_flag"].str.strip().str.lower() == "good").astype(int)
 
-    # Select and encode categorical features
     categorical_cols = [
         "bank_account_type",
         "employment_status_clients",
@@ -127,7 +120,6 @@ def engineer_model_features(df: pd.DataFrame, is_train: bool = True) -> tuple:
 
     data = pd.get_dummies(data, columns=categorical_cols, drop_first=True)
 
-    # Define final feature columns — drop identifiers, raw dates, and target
     drop_cols = [
         "customerid", "systemloanid", "approveddate", "creationdate",
         "birthdate", "referredby", "bank_branch_clients",
@@ -138,5 +130,12 @@ def engineer_model_features(df: pd.DataFrame, is_train: bool = True) -> tuple:
 
     feature_cols = [c for c in data.columns if c not in drop_cols]
     X = data[feature_cols]
+
+    # Align test features to match training columns exactly.
+    # Categories present in training but absent in test produce missing columns
+    # after get_dummies. We add them back as zeros so the pipeline does not
+    # throw a feature mismatch error at prediction time.
+    if train_columns is not None:
+        X = X.reindex(columns=train_columns, fill_value=0)
 
     return X, y

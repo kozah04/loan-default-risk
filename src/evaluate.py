@@ -139,7 +139,9 @@ def plot_roc_curves(results: dict, save: bool = True) -> None:
 
 def plot_shap_summary(model, X: pd.DataFrame, model_name: str, save: bool = True) -> None:
     """
-    Generate a SHAP summary plot for tree-based models.
+    Generate a SHAP summary plot. Automatically selects the right explainer
+    based on model type: TreeExplainer for tree-based models (Random Forest,
+    XGBoost) and LinearExplainer for linear models (Logistic Regression).
 
     Parameters
     ----------
@@ -155,12 +157,14 @@ def plot_shap_summary(model, X: pd.DataFrame, model_name: str, save: bool = True
         print("shap is not installed. Run: pip install shap")
         return
 
-    # Extract the underlying model from the pipeline if needed
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.ensemble import RandomForestClassifier
+    from xgboost import XGBClassifier
+
+    # Extract the underlying model from the pipeline
     estimator = model.named_steps["model"] if hasattr(model, "named_steps") else model
 
-    explainer = shap.TreeExplainer(estimator)
-
-    # Transform X through the pipeline up to but not including the model step
+    # Transform X through all pipeline steps except the final model step
     if hasattr(model, "named_steps"):
         steps_before_model = list(model.named_steps.items())[:-1]
         X_transformed = X.copy()
@@ -170,11 +174,21 @@ def plot_shap_summary(model, X: pd.DataFrame, model_name: str, save: bool = True
     else:
         X_transformed = X
 
-    shap_values = explainer.shap_values(X_transformed)
-
-    # For binary classification, shap_values may be a list — take index 1 (positive class)
-    if isinstance(shap_values, list):
-        shap_values = shap_values[1]
+    # Select the right explainer based on model type
+    if isinstance(estimator, (RandomForestClassifier, XGBClassifier)):
+        explainer = shap.TreeExplainer(estimator)
+        shap_values = explainer.shap_values(X_transformed)
+        # For Random Forest binary classification, shap_values is a list — take index 1
+        if isinstance(shap_values, list):
+            shap_values = shap_values[1]
+    elif isinstance(estimator, LogisticRegression):
+        explainer = shap.LinearExplainer(estimator, X_transformed)
+        shap_values = explainer.shap_values(X_transformed)
+    else:
+        # Fall back to KernelExplainer for any other model type — slower but universal
+        print(f"Using KernelExplainer for {type(estimator).__name__} (this may be slow).")
+        explainer = shap.KernelExplainer(estimator.predict_proba, shap.sample(X_transformed, 100))
+        shap_values = explainer.shap_values(X_transformed)[1]
 
     shap.summary_plot(shap_values, X_transformed, show=False)
     plt.title(f"SHAP Feature Importance — {model_name}")
