@@ -1,7 +1,5 @@
 # Loan Default Risk Model
 
-**Project 4 of 10 — Gwachat Kozah's Data Science Portfolio**
-
 A full machine learning pipeline to predict loan default risk using data from SuperLender, a Nigerian digital lending company. The model predicts whether a repeat loan applicant will repay on time (Good) or default (Bad), based on their demographic profile and prior loan repayment behaviour.
 
 ---
