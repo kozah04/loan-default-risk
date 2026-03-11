@@ -30,7 +30,7 @@ from pathlib import Path
 FIGURES_DIR = Path(__file__).resolve().parents[1] / "outputs" / "figures"
 
 
-def evaluate_model(y_true: pd.Series, y_pred_proba: np.ndarray, threshold: float = 0.5) -> dict:
+def evaluate_model(y_true: pd.Series, y_pred_proba: np.ndarray, threshold: float = 0.5, model_name = None) -> dict:
     """
     Compute classification metrics at a given threshold.
 
