@@ -9,6 +9,16 @@ Three models are compared:
 - Random Forest
 - XGBoost
 
+Iteration 10 additions:
+- CatBoost added as a fourth model with auto_class_weights='Balanced'
+  and boosting_type='Ordered' for small dataset performance
+- F2 score used as tuning objective for CatBoost and XGBoost
+
+Iteration 6 additions:
+- tune_model() now accepts use_time_cv=True to use TimeSeriesSplit
+  instead of StratifiedKFold, ensuring XGBoost tuning folds respect
+  temporal order and do not leak future data into training folds.
+
 Iteration 4 additions:
 - run_smote_ablation(): controlled comparison of 4 imbalance strategies
   (SMOTE only, class_weight only, SMOTE+Tomek, none) per model
@@ -24,13 +34,14 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, StackingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.model_selection import (
-    RandomizedSearchCV, StratifiedKFold, cross_val_predict
+    RandomizedSearchCV, StratifiedKFold, TimeSeriesSplit, cross_val_predict
 )
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import f1_score, roc_auc_score, make_scorer, recall_score
+from sklearn.metrics import f1_score, fbeta_score, roc_auc_score, make_scorer, recall_score
 from xgboost import XGBClassifier
+from catboost import CatBoostClassifier
 from imblearn.over_sampling import SMOTE
 from imblearn.combine import SMOTETomek
 import joblib
@@ -100,6 +111,14 @@ def get_models(class_weight: str = "balanced") -> dict:
                 n_jobs=-1
             )
         ),
+        "catboost": build_pipeline(
+            CatBoostClassifier(
+                auto_class_weights="Balanced",
+                boosting_type="Ordered",
+                random_seed=42,
+                verbose=0,
+            )
+        ),
     }
     return models
 
@@ -137,6 +156,13 @@ def get_param_grids() -> dict:
             "model__colsample_bytree": [0.7, 0.8, 1.0],
             "model__scale_pos_weight": [1, 2, 3, 4, 5],
         },
+        "catboost": {
+            "model__iterations": [100, 200, 300],
+            "model__depth": [4, 5, 6, 7],
+            "model__learning_rate": [0.01, 0.05, 0.1, 0.2],
+            "model__l2_leaf_reg": [1, 3, 5, 10],
+            "model__subsample": [0.7, 0.8, 1.0],
+        },
     }
     return param_grids
 
@@ -149,12 +175,19 @@ def tune_model(
     y_train: pd.Series,
     n_iter: int = 30,
     cv: int = 5,
+    use_time_cv: bool = False,
 ) -> RandomizedSearchCV:
     """
     Run RandomizedSearchCV for a given model pipeline.
 
     XGBoost uses F1 for the Bad class as the scoring metric.
     All other models use ROC-AUC.
+
+    When use_time_cv=True, TimeSeriesSplit is used instead of
+    StratifiedKFold. Each fold's validation data is strictly newer
+    than its training data, which mirrors deployment conditions and
+    prevents temporal leakage during tuning. This is the correct
+    CV strategy when the training data is sorted by date.
 
     Parameters
     ----------
@@ -165,16 +198,29 @@ def tune_model(
     y_train : pd.Series
     n_iter : int
     cv : int
+    use_time_cv : bool
+        If True, use TimeSeriesSplit instead of StratifiedKFold.
+        Pass True when X_train is sorted chronologically.
 
     Returns
     -------
     RandomizedSearchCV
     """
     print(f"Tuning {name}...")
-    cv_strategy = StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
 
-    if "xgboost" in name.lower():
-        scorer = make_scorer(f1_score, pos_label=0, zero_division=0)
+    if use_time_cv:
+        # TimeSeriesSplit never shuffles — each fold validates on strictly
+        # newer data than it trains on. This is appropriate when X_train
+        # is sorted by approveddate as it is in the time-based split.
+        cv_strategy = TimeSeriesSplit(n_splits=cv)
+    else:
+        cv_strategy = StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
+
+    # XGBoost and CatBoost both use F2 for the Bad class as scoring metric.
+    # F2 weights recall more heavily than precision, aligning tuning with
+    # the leaderboard metric which rewards catching defaulters aggressively.
+    if "xgboost" in name.lower() or "catboost" in name.lower():
+        scorer = make_scorer(fbeta_score, beta=2, pos_label=0, zero_division=0)
     else:
         scorer = "roc_auc"
 
@@ -353,8 +399,9 @@ def build_stacking_ensemble(
     rf_calibrated = calibrate_model(rf_base, X_train, y_train, method="sigmoid")
 
     estimators = [
-    ("logistic_regression", lr_base),
-    ("random_forest",       rf_calibrated),
+        ("logistic_regression", lr_base),
+        ("random_forest",       rf_calibrated),
+        ("xgboost",             xgb_base),
     ]
 
     meta_learner = LogisticRegression(
