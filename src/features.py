@@ -1,21 +1,11 @@
 """
 features.py
 -----------
-All feature engineering logic for the SuperLender loan default pipeline.
+Feature engineering for the SuperLender loan default pipeline.
 
-Two categories of features are built here:
-1. Behavioural features derived from previous loans history (per customer aggregates)
-2. Demographic and performance features derived from the merged table
-
-Feature engineering history:
-- Baseline: lifetime aggregations of prior loan behaviour
-- Iteration 2: added recency features (recent_1_paid_late, recent_2_late_rate,
-  recent_3 variants, avg_days_late variants, lateness_trend)
-- Iteration 3: pruned redundant lateness features. Kept recent_1_paid_late,
-  recent_2_late_rate, prev_late_payment_rate, prev_max_days_late
-- Iteration 9: added sequential loan history features
-- Iteration 10: added engineer_pltr_features() for tree-derived interaction rules capturing streaks and
-  recovery patterns that flat averages cannot represent
+Two groups of features:
+1. Behavioural features aggregated from prior loan history
+2. Demographic and current loan features
 """
 
 import pandas as pd
@@ -92,21 +82,13 @@ def engineer_prevloans_features(prevloans: pd.DataFrame) -> pd.DataFrame:
     """
     Aggregate previous loans data into one row per customer, producing
     behavioural features that capture repayment history.
-
-    Iteration 9 adds sequential features that capture streak patterns
-    and recovery behaviour that flat averages cannot represent:
-    - consecutive_ontime_streak: how many recent loans in a row were on time
-    - consecutive_late_streak: how many recent loans in a row were late
-    - ever_recovered: did the customer ever recover after a late payment
-    - last3_trend: are the last 3 loans all good, all bad, or mixed
-
     Parameters
-    ----------
+    ------
     prevloans : pd.DataFrame
         Raw previous loans table.
 
     Returns
-    -------
+    ------
     pd.DataFrame
         One row per customerid with aggregated behavioural features.
     """
@@ -121,10 +103,10 @@ def engineer_prevloans_features(prevloans: pd.DataFrame) -> pd.DataFrame:
     df["actual_loan_duration"] = (df["closeddate"] - df["approveddate"]).dt.days
     df["interest_ratio"] = (df["totaldue"] - df["loanamount"]) / df["loanamount"]
 
-    # Sort chronologically per customer so tail() gives the most recent loans
+    # sort chronologically per customer so tail() gives the most recent loans
     df = df.sort_values(["customerid", "approveddate"]).reset_index(drop=True)
 
-    # --- Lifetime aggregations ---
+    # lifetime aggregations (all prior loans)
     agg = df.groupby("customerid").agg(
         prev_loan_count=("systemloanid", "count"),
         prev_avg_loanamount=("loanamount", "mean"),
@@ -139,7 +121,7 @@ def engineer_prevloans_features(prevloans: pd.DataFrame) -> pd.DataFrame:
         prev_was_referred=("referredby", lambda x: x.notna().any().astype(int)),
     ).reset_index()
 
-    # --- Recency: most recent loan outcome ---
+    # most recent loan outcome
     most_recent = (
         df.groupby("customerid")
         .last()
@@ -148,7 +130,7 @@ def engineer_prevloans_features(prevloans: pd.DataFrame) -> pd.DataFrame:
     )
     agg = agg.merge(most_recent, on="customerid", how="left")
 
-    # --- Recency: late rate over last 2 loans ---
+    # late rate over the last 2 loans
     recent_2 = (
         df.groupby("customerid")
         .apply(lambda g: g.tail(2)["paid_late"].mean())
@@ -157,7 +139,7 @@ def engineer_prevloans_features(prevloans: pd.DataFrame) -> pd.DataFrame:
     recent_2.columns = ["customerid", "recent_2_late_rate"]
     agg = agg.merge(recent_2, on="customerid", how="left")
 
-    # --- Iteration 9: Sequential features ---
+    # sequential features
     seq = df.groupby("customerid")["paid_late"].apply(
         lambda s: pd.Series({
             "consecutive_ontime_streak": _consecutive_ontime_streak(s),
@@ -167,7 +149,7 @@ def engineer_prevloans_features(prevloans: pd.DataFrame) -> pd.DataFrame:
         })
     ).reset_index()
 
-    # Pivot from long to wide
+    # pivot from long to wide
     seq = seq.pivot(index="customerid", columns="level_1", values="paid_late").reset_index()
     seq.columns.name = None
 
@@ -186,7 +168,7 @@ def engineer_model_features(
     features (X) and optionally the target (y).
 
     Parameters
-    ----------
+    ------
     df : pd.DataFrame
         Merged DataFrame from loader.py.
     is_train : bool
@@ -199,7 +181,7 @@ def engineer_model_features(
         but absent in the test set.
 
     Returns
-    -------
+    ------
     X : pd.DataFrame
         Feature matrix.
     y : pd.Series or None
@@ -274,7 +256,7 @@ def engineer_pltr_features(
     cannot be captured by logistic regression alone.
 
     Parameters
-    ----------
+    ------
     X_train : pd.DataFrame
         Training features — used to fit the tree.
     y_train : pd.Series
@@ -288,11 +270,11 @@ def engineer_pltr_features(
         Minimum samples per leaf. Higher values prevent noisy splits.
 
     Returns
-    -------
+    ------
     pd.DataFrame
         X_apply with additional binary rule columns appended.
     """
-    # Fill NaN before fitting the tree — DecisionTree cannot handle NaN
+    # fill NaN before fitting the tree - DecisionTree cannot handle NaN
     X_train_filled = X_train.fillna(X_train.median(numeric_only=True))
     X_apply_filled = X_apply.fillna(X_train.median(numeric_only=True))
 
@@ -304,11 +286,11 @@ def engineer_pltr_features(
     )
     tree.fit(X_train_filled, y_train)
 
-    # Apply tree to get leaf node assignments
+    # apply tree to get leaf node assignments
     train_leaves = tree.apply(X_train_filled)
     apply_leaves = tree.apply(X_apply_filled)
 
-    # Encode each unique leaf as a binary indicator column
+    # encode each unique leaf as a binary indicator column
     unique_leaves = np.unique(train_leaves)
     rule_cols = {}
     for leaf_id in unique_leaves:

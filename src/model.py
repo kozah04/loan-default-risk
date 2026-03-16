@@ -2,30 +2,11 @@
 model.py
 --------
 Model training, hyperparameter tuning, and inference for the
-SuperLender loan default prediction pipeline.
+SuperLender loan default pipeline.
 
-Three models are compared:
-- Logistic Regression
-- Random Forest
-- XGBoost
-
-Iteration 10 additions:
-- CatBoost added as a fourth model with auto_class_weights='Balanced'
-  and boosting_type='Ordered' for small dataset performance
-- F2 score used as tuning objective for CatBoost and XGBoost
-
-Iteration 6 additions:
-- tune_model() now accepts use_time_cv=True to use TimeSeriesSplit
-  instead of StratifiedKFold, ensuring XGBoost tuning folds respect
-  temporal order and do not leak future data into training folds.
-
-Iteration 4 additions:
-- run_smote_ablation(): controlled comparison of 4 imbalance strategies
-  (SMOTE only, class_weight only, SMOTE+Tomek, none) per model
-- calibrate_model(): Platt scaling for RF probability calibration
-- build_stacking_ensemble(): trains LR/RF/XGB as base learners using
-  out-of-fold predictions to avoid leakage, then fits a Logistic
-  Regression meta-learner on those predictions
+Four models: Logistic Regression, Random Forest, XGBoost, CatBoost.
+Includes SMOTE ablation, Platt calibration, stacking ensemble, and
+time-aware cross-validation support.
 """
 
 import numpy as np
@@ -209,16 +190,16 @@ def tune_model(
     print(f"Tuning {name}...")
 
     if use_time_cv:
-        # TimeSeriesSplit never shuffles — each fold validates on strictly
+        # TimeSeriesSplit never shuffles. Each fold validates on strictly
         # newer data than it trains on. This is appropriate when X_train
         # is sorted by approveddate as it is in the time-based split.
         cv_strategy = TimeSeriesSplit(n_splits=cv)
     else:
         cv_strategy = StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
 
-    # XGBoost and CatBoost both use F2 for the Bad class as scoring metric.
-    # F2 weights recall more heavily than precision, aligning tuning with
-    # the leaderboard metric which rewards catching defaulters aggressively.
+    # XGBoost and CatBoost use F2 for the Bad class.
+    # F2 weights recall more heavily than precision, which matches the
+    # credit risk context where missing a defaulter costs more than a false alarm.
     if "xgboost" in name.lower() or "catboost" in name.lower():
         scorer = make_scorer(fbeta_score, beta=2, pos_label=0, zero_division=0)
     else:

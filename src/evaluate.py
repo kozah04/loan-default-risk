@@ -129,7 +129,7 @@ def plot_confusion_matrix(y_true, y_pred, model_name: str, save: bool = True) ->
         yticklabels=["Actual Bad", "Actual Good"],
         ax=ax
     )
-    ax.set_title(f"Confusion Matrix — {model_name}")
+    ax.set_title(f"Confusion Matrix - {model_name}")
     plt.tight_layout()
     if save:
         FIGURES_DIR.mkdir(parents=True, exist_ok=True)
@@ -156,7 +156,7 @@ def plot_roc_curves(results: dict, save: bool = True) -> None:
     ax.plot([0, 1], [0, 1], "k--", label="Random classifier")
     ax.set_xlabel("False Positive Rate")
     ax.set_ylabel("True Positive Rate")
-    ax.set_title("ROC Curves — Model Comparison")
+    ax.set_title("ROC Curves - Model Comparison")
     ax.legend()
     plt.tight_layout()
     if save:
@@ -189,10 +189,10 @@ def plot_shap_summary(model, X: pd.DataFrame, model_name: str, save: bool = True
     from sklearn.ensemble import RandomForestClassifier
     from xgboost import XGBClassifier
 
-    # Extract the underlying model from the pipeline
+    # extract the underlying model from the pipeline
     estimator = model.named_steps["model"] if hasattr(model, "named_steps") else model
 
-    # Transform X through all pipeline steps except the final model step
+    # transform X through all pipeline steps except the final model step
     if hasattr(model, "named_steps"):
         steps_before_model = list(model.named_steps.items())[:-1]
         X_transformed = X.copy()
@@ -202,24 +202,24 @@ def plot_shap_summary(model, X: pd.DataFrame, model_name: str, save: bool = True
     else:
         X_transformed = X
 
-    # Select the right explainer based on model type
+    # select the right explainer based on model type
     if isinstance(estimator, (RandomForestClassifier, XGBClassifier)):
         explainer = shap.TreeExplainer(estimator)
         shap_values = explainer.shap_values(X_transformed)
-        # For Random Forest binary classification, shap_values is a list — take index 1
+        # For Random Forest binary classification, shap_values is a list, take index 1
         if isinstance(shap_values, list):
             shap_values = shap_values[1]
     elif isinstance(estimator, LogisticRegression):
         explainer = shap.LinearExplainer(estimator, X_transformed)
         shap_values = explainer.shap_values(X_transformed)
     else:
-        # Fall back to KernelExplainer for any other model type — slower but universal
+        # fall back to KernelExplainer for any other model type — slower but universal
         print(f"Using KernelExplainer for {type(estimator).__name__} (this may be slow).")
         explainer = shap.KernelExplainer(estimator.predict_proba, shap.sample(X_transformed, 100))
         shap_values = explainer.shap_values(X_transformed)[1]
 
     shap.summary_plot(shap_values, X_transformed, show=False)
-    plt.title(f"SHAP Feature Importance — {model_name}")
+    plt.title(f"SHAP Feature Importance - {model_name}")
     plt.tight_layout()
     if save:
         FIGURES_DIR.mkdir(parents=True, exist_ok=True)
