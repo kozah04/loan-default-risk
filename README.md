@@ -65,8 +65,8 @@ loan-default-risk/
 
 1. Load and merge three tables into one row per customer
 2. Time-based train/validation split (oldest 80% train, newest 20% validate)
-3. Feature engineering — behavioural aggregations, recency features, PLTR interaction features
-4. SMOTE ablation — find the best imbalance strategy per model
+3. Feature engineering - behavioural aggregations, recency features, PLTR interaction features
+4. SMOTE ablation - find the best imbalance strategy per model
 5. Model comparison and hyperparameter tuning across LR, RF, XGBoost, CatBoost
 6. Stacking ensemble with Platt-calibrated Random Forest
 7. Threshold sweep to find the leaderboard-optimal cut-off
@@ -107,5 +107,4 @@ conda activate loan-default-risk
 - Time-based validation for temporal datasets
 - SHAP explainability
 - Credit risk modelling concepts
-
 ---
