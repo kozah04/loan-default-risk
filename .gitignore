@@ -42,3 +42,4 @@ outputs/figures/
 
 # Logs
 *.log
+catboost_info/

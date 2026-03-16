@@ -1,31 +1,33 @@
 # Loan Default Risk Model
 
-A full machine learning pipeline to predict loan default risk using data from SuperLender, a Nigerian digital lending company. The model predicts whether a repeat loan applicant will repay on time (Good) or default (Bad), based on their demographic profile and prior loan repayment behaviour.
+A full machine learning pipeline to predict loan default risk using data from SuperLender, a Nigerian digital lending company. The model predicts whether a repeat loan applicant will repay on time (Good) or default (Bad), based on their demographic profile and prior repayment behaviour.
+
+**Best result: 0.2076 leaderboard error rate (48% improvement over baseline)**
 
 ---
 
 ## Problem Statement
 
-SuperLender needs to assess credit risk at the point of each loan application. For repeat customers — those who have taken prior loans — behavioural repayment history is available and can be incorporated into the risk model alongside demographic features. The task is binary classification: predict Good (1) or Bad (0).
+SuperLender assesses credit risk at the point of each loan application. For repeat customers, prior repayment history is available and incorporated into the risk model alongside demographics. The task is binary classification: predict Good (1) or Bad (0).
+
+The dataset is heavily imbalanced at 78.2% Good and 21.8% Bad. Missing a defaulter costs more than a false alarm, so the model is optimised for recall on the Bad class throughout.
 
 ---
 
 ## Dataset
 
-The data is sourced from the [Data Science Nigeria Loan Default Prediction Challenge](https://zindi.africa/competitions/data-science-nigeria-challenge-1-loan-default-prediction) on Zindi.
+Sourced from the [Data Science Nigeria Loan Default Prediction Challenge](https://zindi.africa/competitions/data-science-nigeria-challenge-1-loan-default-prediction) on Zindi.
 
-The dataset is the sole property of Zindi and the competition host and cannot be redistributed. To reproduce this work, download the data directly from the Zindi competition page and place the files in `data/raw/`.
-
-The dataset consists of three linked tables:
+The data is the sole property of Zindi and cannot be redistributed. To reproduce this work, download the files from the Zindi competition page and place them in `data/raw/`.
 
 | File | Description |
 |------|-------------|
-| `trainperf.csv` | Loan performance data including the target variable `good_bad_flag` |
-| `traindemographics.csv` | Customer demographic data |
-| `trainprevloans.csv` | All prior loans taken by each customer before the loan to be predicted |
-| `testperf.csv` | Performance data for the test set (no target) |
-| `testdemographics.csv` | Demographic data for the test set |
-| `testprevloans.csv` | Prior loan history for test set customers |
+| `trainperf.csv` | Loan performance data including the target `good_bad_flag` |
+| `traindemographics.csv` | Customer demographics |
+| `trainprevloans.csv` | All prior loans per customer before the loan to predict |
+| `testperf.csv` | Test performance data (no target) |
+| `testdemographics.csv` | Test demographics |
+| `testprevloans.csv` | Prior loan history for test customers |
 
 ---
 
@@ -34,24 +36,24 @@ The dataset consists of three linked tables:
 ```
 loan-default-risk/
 ├── data/
-│   ├── raw/              # Original Zindi files — gitignored
-│   └── processed/        # Merged and cleaned datasets — gitignored
+│   ├── raw/              # Zindi files — gitignored
+│   └── processed/        # Merged datasets — gitignored
 ├── notebooks/
-│   ├── 01_eda.ipynb
-│   └── 02_modelling_and_evaluation.ipynb
+│   ├── eda.ipynb         # Exploratory data analysis
+│   └── modelling_and_evaluation.ipynb
 ├── src/
 │   ├── loader.py         # Data loading and merging
 │   ├── features.py       # Feature engineering
-│   ├── model.py          # Training, tuning, and inference
-│   └── evaluate.py       # Metrics, threshold optimisation, plots
+│   ├── model.py          # Training, tuning, stacking, calibration
+│   └── evaluate.py       # Metrics, threshold search, SHAP plots
 ├── tests/
 │   ├── test_loader.py
 │   ├── test_features.py
 │   └── test_model.py
 ├── outputs/
-│   ├── models/           # Saved model files — gitignored
+│   ├── models/           # Saved models — gitignored
 │   ├── figures/          # Generated plots — gitignored
-│   └── submissions/      # Zindi submission CSVs
+│   └── submission/       # Best Zindi submission
 ├── environment.yml
 ├── requirements.txt
 └── README.md
@@ -59,17 +61,31 @@ loan-default-risk/
 
 ---
 
-## Pipeline Overview
+## Pipeline
 
-1. Data loading and merging across three tables
-2. Exploratory data analysis
-3. Feature engineering — behavioural features derived from prior loan history
-4. Baseline model — Logistic Regression
-5. Imbalanced class handling — class weights and SMOTE
-6. Model comparison — Logistic Regression, Random Forest, XGBoost
-7. Hyperparameter tuning — RandomizedSearchCV
-8. Threshold optimisation — balancing precision and recall for business context
-9. Model explainability — SHAP feature importance
+1. Load and merge three tables into one row per customer
+2. Time-based train/validation split (oldest 80% train, newest 20% validate)
+3. Feature engineering — behavioural aggregations, recency features, PLTR interaction features
+4. SMOTE ablation — find the best imbalance strategy per model
+5. Model comparison and hyperparameter tuning across LR, RF, XGBoost, CatBoost
+6. Stacking ensemble with Platt-calibrated Random Forest
+7. Threshold sweep to find the leaderboard-optimal cut-off
+8. SHAP explainability on the best model
+
+---
+
+## Key Results
+
+| Version | Val ROC-AUC | LB Error Rate |
+|---------|------------|---------------|
+| Baseline | 0.6885 | 0.4007 |
+| Recency features | 0.6929 | 0.3448 |
+| Time-based validation | 0.7214 | 0.2503 |
+| PLTR features + CatBoost + F2 threshold | 0.7327 | **0.2076** |
+
+**Best model:** LR + RF stacking ensemble, PLTR interaction features, threshold 0.25
+
+**Key finding:** The single biggest improvement came from switching to a time-based validation split. The dataset covers only July 2017 (30 days). A random split inflated validation metrics and hid genuine model improvements for the first four iterations.
 
 ---
 
@@ -82,23 +98,14 @@ conda activate loan-default-risk
 
 ---
 
-## Key Results
+## Techniques Demonstrated
 
-*To be updated after modelling is complete.*
-
----
-
-## Skills Demonstrated
-
-- Multi-table data merging and feature engineering
-- Handling class imbalance (SMOTE, class weights, threshold tuning)
-- Model comparison and hyperparameter tuning
+- Multi-table data merging and behavioural feature engineering
+- Imbalanced classification (SMOTE ablation, class weights, F2 threshold optimisation)
+- Stacking ensembles with probability calibration
+- PLTR interaction features for logistic regression
+- Time-based validation for temporal datasets
 - SHAP explainability
-- Credit risk modelling concepts (willingness to pay, ability to pay)
+- Credit risk modelling concepts
 
 ---
-
-## Author
-
-**Gwachat Kozah**
-[github.com/kozah04](https://github.com/kozah04) | gwachatkozah04@gmail.com
