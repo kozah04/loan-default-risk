@@ -1,110 +1,177 @@
 # Loan Default Risk Model
 
-A full machine learning pipeline to predict loan default risk using data from SuperLender, a Nigerian digital lending company. The model predicts whether a repeat loan applicant will repay on time (Good) or default (Bad), based on their demographic profile and prior repayment behaviour.
-
-**Best result: 0.2076 leaderboard error rate (48% improvement over baseline)**
-
----
-
-## Problem Statement
-
-SuperLender assesses credit risk at the point of each loan application. For repeat customers, prior repayment history is available and incorporated into the risk model alongside demographics. The task is binary classification: predict Good (1) or Bad (0).
-
-The dataset is heavily imbalanced at 78.2% Good and 21.8% Bad. Missing a defaulter costs more than a false alarm, so the model is optimised for recall on the Bad class throughout.
+Full machine learning pipeline to predict loan default risk for a Nigerian digital
+lending company. Binary classification: predict whether a repeat loan applicant will
+repay on time (Good=1) or default (Bad=0), using demographic profile and prior
+repayment behaviour.
 
 ---
 
-## Dataset
+## Project Overview
 
-Sourced from the [Data Science Nigeria Loan Default Prediction Challenge](https://zindi.africa/competitions/data-science-nigeria-challenge-1-loan-default-prediction) on Zindi.
+**Goal:** Build a credit risk model that accurately identifies customers likely to
+default on their next loan, with emphasis on recall for the Bad class since missing
+a defaulter costs more than a false alarm.
 
-The data is the sole property of Zindi and cannot be redistributed. To reproduce this work, download the files from the Zindi competition page and place them in `data/raw/`.
+**Dataset:** DSN SuperLender Loan Default Prediction Challenge on Zindi. 4,376
+training loans from a Nigerian digital lender, all recorded within July 2017.
+Three linked tables: loan performance, customer demographics, and prior loan history.
 
-| File | Description |
-|------|-------------|
-| `trainperf.csv` | Loan performance data including the target `good_bad_flag` |
-| `traindemographics.csv` | Customer demographics |
-| `trainprevloans.csv` | All prior loans per customer before the loan to predict |
-| `testperf.csv` | Test performance data (no target) |
-| `testdemographics.csv` | Test demographics |
-| `testprevloans.csv` | Prior loan history for test customers |
+**Methods:** Logistic Regression, Random Forest, XGBoost, CatBoost, stacking
+ensemble with Platt calibration, SMOTE ablation, PLTR interaction features,
+F2 threshold optimisation, SHAP explainability.
 
----
-
-## Project Structure
-
-```
-loan-default-risk/
-├── data/
-│   ├── raw/              # Zindi files — gitignored
-│   └── processed/        # Merged datasets — gitignored
-├── notebooks/
-│   ├── eda.ipynb         # Exploratory data analysis
-│   └── modelling_and_evaluation.ipynb
-├── src/
-│   ├── loader.py         # Data loading and merging
-│   ├── features.py       # Feature engineering
-│   ├── model.py          # Training, tuning, stacking, calibration
-│   └── evaluate.py       # Metrics, threshold search, SHAP plots
-├── tests/
-│   ├── test_loader.py
-│   ├── test_features.py
-│   └── test_model.py
-├── outputs/
-│   ├── models/           # Saved models — gitignored
-│   ├── figures/          # Generated plots — gitignored
-│   └── submission/       # Best Zindi submission
-├── environment.yml
-├── requirements.txt
-└── README.md
-```
+**Best result:** 0.2076 leaderboard error rate (48% improvement over baseline of 0.4007).
 
 ---
 
-## Pipeline
-
-1. Load and merge three tables into one row per customer
-2. Time-based train/validation split (oldest 80% train, newest 20% validate)
-3. Feature engineering - behavioural aggregations, recency features, PLTR interaction features
-4. SMOTE ablation - find the best imbalance strategy per model
-5. Model comparison and hyperparameter tuning across LR, RF, XGBoost, CatBoost
-6. Stacking ensemble with Platt-calibrated Random Forest
-7. Threshold sweep to find the leaderboard-optimal cut-off
-8. SHAP explainability on the best model
-
----
-
-## Key Results
+## Results Summary
 
 | Version | Val ROC-AUC | LB Error Rate |
-|---------|------------|---------------|
+|---|---|---|
 | Baseline | 0.6885 | 0.4007 |
 | Recency features | 0.6929 | 0.3448 |
 | Time-based validation | 0.7214 | 0.2503 |
 | PLTR features + CatBoost + F2 threshold | 0.7327 | **0.2076** |
 
-**Best model:** LR + RF stacking ensemble, PLTR interaction features, threshold 0.25
+**Best model:** LR + RF stacking ensemble, PLTR interaction features, threshold 0.25.
 
-**Key finding:** The single biggest improvement came from switching to a time-based validation split. The dataset covers only July 2017 (30 days). A random split inflated validation metrics and hid genuine model improvements for the first four iterations.
+**Key finding:** The single biggest improvement came from switching to a time-based
+validation split. The dataset covers only 30 days (July 2017). A random split
+inflated validation metrics and masked real model improvements for the first four
+iterations. One validation setup change outperformed four iterations of model tuning.
+
+---
+
+## Repository Structure
+
+```
+loan-default-risk/
+├── data/
+│   ├── raw/              # gitignored - place Zindi files here
+│   └── processed/        # gitignored - generated by pipeline
+├── notebooks/
+│   ├── eda.ipynb                       # EDA and data understanding
+│   └── modelling_and_evaluation.ipynb  # full modelling pipeline
+├── src/
+│   ├── loader.py         # data loading and merging
+│   ├── features.py       # feature engineering including PLTR
+│   ├── model.py          # training, tuning, stacking, calibration
+│   └── evaluate.py       # metrics, F2 threshold search, SHAP plots
+├── tests/
+│   ├── test_loader.py
+│   ├── test_features.py
+│   └── test_model.py
+├── outputs/
+│   ├── models/           # gitignored - generated by pipeline
+│   ├── figures/          # gitignored - generated by pipeline
+│   └── submission/       # best Zindi submission CSV
+├── environment.yml
+└── requirements.txt
+```
 
 ---
 
 ## Setup
 
+**1. Clone the repo**
+```bash
+git clone git@github.com:kozah04/loan-default-risk.git
+cd loan-default-risk
+```
+
+**2. Create the conda environment**
 ```bash
 conda env create -f environment.yml
 conda activate loan-default-risk
 ```
 
+**3. Add the raw data**
+
+Download the dataset from the
+[Data Science Nigeria Loan Default Prediction Challenge](https://zindi.africa/competitions/data-science-nigeria-challenge-1-loan-default-prediction)
+on Zindi. The data is the sole property of Zindi and cannot be redistributed.
+Place all CSV files at:
+```
+data/raw/
+```
+
 ---
 
-## Techniques Demonstrated
+## Notebooks
 
-- Multi-table data merging and behavioural feature engineering
-- Imbalanced classification (SMOTE ablation, class weights, F2 threshold optimisation)
-- Stacking ensembles with probability calibration
-- PLTR interaction features for logistic regression
-- Time-based validation for temporal datasets
-- SHAP explainability
-- Credit risk modelling concepts
+The notebooks document the full reasoning behind every decision. The `src/` modules
+reproduce the same logic in reusable form.
+
+**`notebooks/eda.ipynb`**
+Data structure, missing value analysis, target variable distribution, loan amount
+and term distributions, demographic feature profiles, prior loan behaviour patterns,
+and behavioural feature correlations with the target.
+
+**`notebooks/modelling_and_evaluation.ipynb`**
+Time-based train/validation split, PLTR interaction features, SMOTE ablation across
+four imbalance strategies, hyperparameter tuning for all four models, stacking
+ensemble configuration comparison, F2 threshold optimisation, threshold sweep
+against the leaderboard metric, SHAP feature importance, and Zindi submission.
+
 ---
+
+## Key Decisions
+
+| Decision | Reason |
+|---|---|
+| Time-based validation split | All loans are from July 2017. A random split inflates metrics by mixing loans from the same days across train and val. Time-based split mirrors deployment conditions. |
+| Stratified CV for tuning | TimeSeriesSplit for tuning folds was tested and made things worse. A 30-day dataset creates too-small early folds that give noisy tuning signals. |
+| PLTR interaction features | A depth-2 decision tree extracts binary interaction rules (e.g. high late rate AND large loan). Encoded as binary columns, this gives logistic regression access to interactions it cannot model alone. |
+| F2 threshold optimisation | F2 weights recall twice as heavily as precision, matching the credit risk context where missing a defaulter is more costly than a false alarm. |
+| Platt calibration on RF | Random Forest probabilities cluster near 0 and 1 by default. Platt scaling produces well-calibrated estimates before RF enters the stack. |
+| LR+RF stack over individual models | With a reliable time-based validation set, the stack consistently outperformed any individual model. The meta-learner learns to combine LR (high recall) and RF (high precision) effectively. |
+| Threshold 0.25 over F2-optimal 0.57 | Found via systematic leaderboard sweep. The leaderboard rewards aggressive Bad predictions more than validation F2 suggests. Always sweep against the actual competition metric. |
+
+---
+
+## Limitations
+
+- **Single month of data:** The entire dataset covers July 2017 — one 30-day window.
+  The model cannot capture seasonal patterns, economic trends, or customer behaviour
+  across time. This caps maximum achievable performance regardless of model complexity,
+  which is consistent with findings on single-period credit scoring models.
+- **Narrow geographic scope:** SuperLender operates in Nigeria. The model may not
+  generalise to other lending contexts or economic conditions.
+- **Class imbalance:** At 78.2% Good and 21.8% Bad, the model was optimised for
+  recall on the minority class. Precision on Bad predictions is relatively low (0.50
+  at threshold 0.25), meaning roughly half of flagged defaulters are false alarms.
+- **Behaviour-only model:** Customers with no prior loan history (9 out of 4,376)
+  have missing behavioural features imputed with medians. The model is weakest for
+  these new customers.
+
+---
+
+## Environment
+
+- Python 3.11
+- scikit-learn, imbalanced-learn, xgboost, catboost
+- pandas, numpy, scipy
+- shap, matplotlib, seaborn
+- joblib, jupyter, ipykernel
+
+See `environment.yml` for full dependency list.
+
+---
+
+## References
+
+- Zindi / Data Science Nigeria (2018). Loan Default Prediction Challenge.
+  Retrieved from https://zindi.africa/competitions/data-science-nigeria-challenge-1-loan-default-prediction
+- Chawla, N.V., Bowyer, K.W., Hall, L.O., and Kegelmeyer, W.P. (2002). SMOTE:
+  Synthetic Minority Over-sampling Technique. Journal of Artificial Intelligence
+  Research, 16, 321-357.
+- Dumitrescu, E., Hue, S., Hurlin, C., and Tokpavi, S. (2022). Machine learning
+  for credit scoring: Improving logistic regression with non-linear
+  decision-tree effects. European Journal of Operational Research, 297(3), 1178-1192.
+- Lundberg, S.M. and Lee, S.I. (2017). A Unified Approach to Interpreting Model
+  Predictions. Advances in Neural Information Processing Systems, 30.
+- Platt, J. (1999). Probabilistic Outputs for Support Vector Machines and
+  Comparisons to Regularized Likelihood Methods. Advances in Large Margin
+  Classifiers, 10(3), 61-74.
+- Wolpert, D.H. (1992). Stacked Generalization. Neural Networks, 5(2), 241-259.
